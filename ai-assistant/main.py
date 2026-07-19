@@ -5,7 +5,7 @@ from openai import OpenAI
 import os
 import httpx
 import json
-import request
+import requests
 
 app = FastAPI(title="AI Assistant Service", version="2.0.0")
 
