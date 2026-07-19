@@ -4,7 +4,7 @@
 ```
 #!/bin/bash
 
-ACCOUNT=508262720940
+ACCOUNT=340640891954
 REGION=ap-northeast-1
 
 for svc in mcp-api-gateway auth-service mcp-control-plane model-service ai-assistant recommendation-engine product-service user-service payment-service frontend; do

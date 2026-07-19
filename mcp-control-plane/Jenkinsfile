@@ -3,10 +3,10 @@ pipeline {
 
     environment {
         AWS_REGION      = "ap-northeast-1"
-        ECR_ACCOUNT_ID  = "508262720940"
+        ECR_ACCOUNT_ID  = "340640891954"
         ECR_REPO        = "${ECR_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/mcp-platform/mcp-control-plane"
         IMAGE_NAME      = "${ECR_REPO}:${GIT_COMMIT}"
-        GITOPS_REPO     = "https://github.com/QuntamVector/MCP-Project-GitOps.git"
+        GITOPS_REPO     = "https://github.com/DevOps-Projects-Kishorekumarchelluri/MCP-Project-GitOps.git"
         SERVICE_NAME    = "mcp-control-plane"
     }
 
@@ -14,7 +14,7 @@ pipeline {
 
         stage('Git Checkout') {
             steps {
-                git url: 'https://github.com/QuntamVector/MCP-Project-ALL-services.git', branch: 'main'
+                git url: 'https://github.com/DevOps-Projects-Kishorekumarchelluri/MCP-Project-ALL-services.git', branch: 'main'
             }
         }
 
@@ -62,7 +62,7 @@ pipeline {
                             rm -rf gitops
                         fi
 
-                        git clone https://$GIT_USERNAME:$GIT_PASSWORD@github.com/QuntamVector/MCP-Project-GitOps.git gitops
+                        git clone https://$GIT_USERNAME:$GIT_PASSWORD@github.com/DevOps-Projects-Kishorekumarchelluri/MCP-Project-GitOps.git gitops
                         cd gitops/base/${SERVICE_NAME}/
 
                         git config user.email "jenkins@ci.com"
