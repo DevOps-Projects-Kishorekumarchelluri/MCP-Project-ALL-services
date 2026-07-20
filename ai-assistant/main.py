@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from pydantic import BaseModel
 from typing import Optional, List
-from anthropic import Anthropic
+import google.generativeai as genai
 import os
 import httpx
 import json
@@ -9,7 +9,7 @@ import requests
 
 app = FastAPI(title="AI Assistant Service", version="2.0.0")
 
-client = Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
 
 CONTROL_PLANE_URL   = os.getenv("MCP_CONTROL_PLANE_URL",     "http://mcp-control-plane:8008")
 PRODUCT_SERVICE_URL = os.getenv("PRODUCT_SERVICE_URL",       "http://product-service:8005")
@@ -150,89 +150,56 @@ def health():
 
 @app.post("/chat")
 def chat(req: ChatRequest):
-    msgs = [{"role": m.role, "content": m.content} for m in req.messages]
+    model = genai.GenerativeModel("gemini-pro")
 
     tools_used = []
-    total_input = 0
-    total_output = 0
 
-    # Tool-calling loop (max 5 rounds)
-    for _ in range(5):
-        response = client.messages.create(
-            model="claude-3-haiku-20240307",
-            max_tokens=req.max_tokens,
-            system=SYSTEM_PROMPT,
-            tools=MCP_TOOLS,
-            messages=msgs,
+    # Convert messages to Gemini format
+    history = []
+    for m in req.messages:
+        history.append({
+            "role": "user" if m.role == "user" else "model",
+            "parts": [m.content]
+        })
+
+    # Get response from Gemini
+    try:
+        chat_session = model.start_chat(history=history)
+        response = chat_session.send_message(
+            f"{SYSTEM_PROMPT}\n\nUser message: {req.messages[-1].content if req.messages else ''}",
+            generation_config=genai.types.GenerationConfig(
+                max_output_tokens=req.max_tokens,
+            ),
         )
-        total_input  += response.usage.input_tokens
-        total_output += response.usage.output_tokens
 
-        # Extract text response
-        text_response = ""
-        tool_calls = []
+        text_response = response.text
 
-        for block in response.content:
-            if block.type == "text":
-                text_response = block.text
-            elif block.type == "tool_use":
-                tool_calls.append(block)
-
-        # No tool calls — final answer
-        if not tool_calls or response.stop_reason == "end_turn":
-            return {
-                "response":   text_response,
-                "session_id": req.session_id,
-                "tools_used": tools_used,
-                "usage": {
-                    "input_tokens":  total_input,
-                    "output_tokens": total_output,
-                }
+        return {
+            "response": text_response,
+            "session_id": req.session_id,
+            "tools_used": tools_used,
+            "usage": {
+                "input_tokens": 0,
+                "output_tokens": 0,
             }
-
-        # Add assistant response to conversation
-        msgs.append({"role": "assistant", "content": response.content})
-
-        # Execute tool calls
-        for tc in tool_calls:
-            args = {}
-            try:
-                args = json.loads(tc.input)
-            except Exception:
-                pass
-
-            result = call_tool(tc.name, args)
-            tools_used.append({"tool": tc.name, "args": args})
-
-            msgs.append({
-                "role": "user",
-                "content": [
-                    {
-                        "type": "tool_result",
-                        "tool_use_id": tc.id,
-                        "content": result,
-                    }
-                ],
-            })
-
-    return {
-        "response":   "Reached maximum tool-call rounds without a final answer.",
-        "session_id": req.session_id,
-        "tools_used": tools_used,
-        "usage":      {"input_tokens": total_input, "output_tokens": total_output},
-    }
+        }
+    except Exception as e:
+        return {
+            "response": f"Error: {str(e)}",
+            "session_id": req.session_id,
+            "tools_used": tools_used,
+            "usage": {"input_tokens": 0, "output_tokens": 0},
+        }
 
 
 @app.post("/summarize")
 def summarize(text: str, max_tokens: int = 512):
-    response = client.messages.create(
-        model="claude-3-haiku-20240307",
-        max_tokens=max_tokens,
-        messages=[{"role": "user", "content": f"Summarize the following:\n\n{text}"}],
-    )
-    summary = ""
-    for block in response.content:
-        if block.type == "text":
-            summary = block.text
-            break
-    return {"summary": summary}
+    model = genai.GenerativeModel("gemini-pro")
+    try:
+        response = model.generate_content(
+            f"Summarize the following:\n\n{text}",
+            generation_config=genai.types.GenerationConfig(max_output_tokens=max_tokens),
+        )
+        return {"summary": response.text}
+    except Exception as e:
+        return {"summary": f"Error: {str(e)}"}
