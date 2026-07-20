@@ -72,7 +72,17 @@ pipeline {
 
                         git add .
                         git commit -m "Update ${SERVICE_NAME} image to ${IMAGE_NAME}"
-                        git push origin main
+
+                        # Retry push with rebase in case of concurrent updates
+                        for attempt in {1..5}; do
+                            if git push origin main; then
+                                echo "Push successful on attempt $attempt"
+                                break
+                            else
+                                echo "Push failed on attempt $attempt, rebasing and retrying..."
+                                git pull --rebase origin main
+                            fi
+                        done
                     '''
                 }
             }
