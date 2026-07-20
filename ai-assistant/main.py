@@ -159,7 +159,7 @@ def chat(req: ChatRequest):
     # Tool-calling loop (max 5 rounds)
     for _ in range(5):
         response = client.messages.create(
-            model="claude-3-sonnet-20240229",
+            model="claude-3-haiku-20240307",
             max_tokens=req.max_tokens,
             system=SYSTEM_PROMPT,
             tools=MCP_TOOLS,
@@ -226,7 +226,7 @@ def chat(req: ChatRequest):
 @app.post("/summarize")
 def summarize(text: str, max_tokens: int = 512):
     response = client.messages.create(
-        model="claude-3-sonnet-20240229",
+        model="claude-3-haiku-20240307",
         max_tokens=max_tokens,
         messages=[{"role": "user", "content": f"Summarize the following:\n\n{text}"}],
     )
