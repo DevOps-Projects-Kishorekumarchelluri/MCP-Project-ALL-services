@@ -9,7 +9,7 @@ import requests
 app = FastAPI(title="AI Assistant Service", version="2.0.0")
 
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://ollama:11434")
-OLLAMA_MODEL = "qwen2.5-coder:7b"
+OLLAMA_MODEL = "qwen2.5-coder:1.5b"
 
 CONTROL_PLANE_URL   = os.getenv("MCP_CONTROL_PLANE_URL",     "http://mcp-control-plane:8008")
 PRODUCT_SERVICE_URL = os.getenv("PRODUCT_SERVICE_URL",       "http://product-service:8005")
