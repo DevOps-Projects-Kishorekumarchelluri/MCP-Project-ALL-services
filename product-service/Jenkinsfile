@@ -68,7 +68,7 @@ pipeline {
                         git config user.email "jenkins@ci.com"
                         git config user.name "jenkins"
 
-                        sed -i "s|image: .*product-service.*|image: ${IMAGE_NAME}|g" deployment.yaml
+                        sed -i "s|image:.*product-service.*|image: ${IMAGE_NAME}|g" deployment.yaml
 
                         git add .
                         git commit -m "Update ${SERVICE_NAME} image to ${IMAGE_NAME}"
