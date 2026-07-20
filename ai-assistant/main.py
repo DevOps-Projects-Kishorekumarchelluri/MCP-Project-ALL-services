@@ -36,73 +36,61 @@ Rules:
 
 MCP_TOOLS = [
     {
-        "type": "function",
-        "function": {
-            "name": "get_cluster_status",
-            "description": "Get live Kubernetes cluster status: pods, nodes, CPU/memory usage, cluster info.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "namespace": {"type": "string", "description": "Kubernetes namespace (optional, defaults to mcp-platform)"}
-                }
+        "name": "get_cluster_status",
+        "description": "Get live Kubernetes cluster status: pods, nodes, CPU/memory usage, cluster info.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "namespace": {"type": "string", "description": "Kubernetes namespace (optional, defaults to mcp-platform)"}
             }
         }
     },
     {
-        "type": "function",
-        "function": {
-            "name": "get_products",
-            "description": "List all products in the platform catalog. Optionally filter by category.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "category": {"type": "string", "description": "Filter by category (optional)"}
-                }
+        "name": "get_products",
+        "description": "List all products in the platform catalog. Optionally filter by category.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "category": {"type": "string", "description": "Filter by category (optional)"}
             }
         }
     },
     {
-        "type": "function",
-        "function": {
-            "name": "get_product",
-            "description": "Get details of a specific product by ID.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "product_id": {"type": "string", "description": "The product ID"}
-                },
-                "required": ["product_id"]
-            }
+        "name": "get_product",
+        "description": "Get details of a specific product by ID.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "product_id": {"type": "string", "description": "The product ID"}
+            },
+            "required": ["product_id"]
         }
     },
     {
-        "type": "function",
-        "function": {
-            "name": "get_users",
-            "description": "List all registered users on the platform.",
-            "parameters": {"type": "object", "properties": {}}
+        "name": "get_users",
+        "description": "List all registered users on the platform.",
+        "input_schema": {
+            "type": "object",
+            "properties": {}
         }
     },
     {
-        "type": "function",
-        "function": {
-            "name": "get_models",
-            "description": "List AI models registered in the MCP model registry.",
-            "parameters": {"type": "object", "properties": {}}
+        "name": "get_models",
+        "description": "List AI models registered in the MCP model registry.",
+        "input_schema": {
+            "type": "object",
+            "properties": {}
         }
     },
     {
-        "type": "function",
-        "function": {
-            "name": "get_payment",
-            "description": "Look up a payment record by payment ID.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "payment_id": {"type": "string", "description": "The payment UUID"}
-                },
-                "required": ["payment_id"]
-            }
+        "name": "get_payment",
+        "description": "Look up a payment record by payment ID.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "payment_id": {"type": "string", "description": "The payment UUID"}
+            },
+            "required": ["payment_id"]
         }
     },
 ]
