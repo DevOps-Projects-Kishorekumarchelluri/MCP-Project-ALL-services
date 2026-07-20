@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from pydantic import BaseModel
 from typing import Optional, List
+from openai import OpenAI
 import os
 import httpx
 import json
@@ -8,8 +9,7 @@ import requests
 
 app = FastAPI(title="AI Assistant Service", version="2.0.0")
 
-OLLAMA_URL = os.getenv("OLLAMA_URL", "http://ollama:11434")
-OLLAMA_MODEL = "qwen2.5-coder:1.5b"
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 CONTROL_PLANE_URL   = os.getenv("MCP_CONTROL_PLANE_URL",     "http://mcp-control-plane:8008")
 PRODUCT_SERVICE_URL = os.getenv("PRODUCT_SERVICE_URL",       "http://product-service:8005")
@@ -36,61 +36,73 @@ Rules:
 
 MCP_TOOLS = [
     {
-        "name": "get_cluster_status",
-        "description": "Get live Kubernetes cluster status: pods, nodes, CPU/memory usage, cluster info.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "namespace": {"type": "string", "description": "Kubernetes namespace (optional, defaults to mcp-platform)"}
+        "type": "function",
+        "function": {
+            "name": "get_cluster_status",
+            "description": "Get live Kubernetes cluster status: pods, nodes, CPU/memory usage, cluster info.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "namespace": {"type": "string", "description": "Kubernetes namespace (optional, defaults to mcp-platform)"}
+                }
             }
         }
     },
     {
-        "name": "get_products",
-        "description": "List all products in the platform catalog. Optionally filter by category.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "category": {"type": "string", "description": "Filter by category (optional)"}
+        "type": "function",
+        "function": {
+            "name": "get_products",
+            "description": "List all products in the platform catalog. Optionally filter by category.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "category": {"type": "string", "description": "Filter by category (optional)"}
+                }
             }
         }
     },
     {
-        "name": "get_product",
-        "description": "Get details of a specific product by ID.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "product_id": {"type": "string", "description": "The product ID"}
-            },
-            "required": ["product_id"]
+        "type": "function",
+        "function": {
+            "name": "get_product",
+            "description": "Get details of a specific product by ID.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "product_id": {"type": "string", "description": "The product ID"}
+                },
+                "required": ["product_id"]
+            }
         }
     },
     {
-        "name": "get_users",
-        "description": "List all registered users on the platform.",
-        "input_schema": {
-            "type": "object",
-            "properties": {}
+        "type": "function",
+        "function": {
+            "name": "get_users",
+            "description": "List all registered users on the platform.",
+            "parameters": {"type": "object", "properties": {}}
         }
     },
     {
-        "name": "get_models",
-        "description": "List AI models registered in the MCP model registry.",
-        "input_schema": {
-            "type": "object",
-            "properties": {}
+        "type": "function",
+        "function": {
+            "name": "get_models",
+            "description": "List AI models registered in the MCP model registry.",
+            "parameters": {"type": "object", "properties": {}}
         }
     },
     {
-        "name": "get_payment",
-        "description": "Look up a payment record by payment ID.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "payment_id": {"type": "string", "description": "The payment UUID"}
-            },
-            "required": ["payment_id"]
+        "type": "function",
+        "function": {
+            "name": "get_payment",
+            "description": "Look up a payment record by payment ID.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "payment_id": {"type": "string", "description": "The payment UUID"}
+                },
+                "required": ["payment_id"]
+            }
         }
     },
 ]
@@ -150,61 +162,70 @@ def health():
 
 @app.post("/chat")
 def chat(req: ChatRequest):
+    msgs = [{"role": "system", "content": SYSTEM_PROMPT}]
+    msgs += [{"role": m.role, "content": m.content} for m in req.messages]
+
     tools_used = []
+    total_input = 0
+    total_output = 0
 
-    # Build messages for Ollama
-    messages = [{"role": "system", "content": SYSTEM_PROMPT}]
-    for m in req.messages:
-        messages.append({"role": m.role, "content": m.content})
-
-    try:
-        response = requests.post(
-            f"{OLLAMA_URL}/api/chat",
-            json={
-                "model": OLLAMA_MODEL,
-                "messages": messages,
-                "stream": False,
-            },
-            timeout=30
+    # Tool-calling loop (max 5 rounds)
+    for _ in range(5):
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            max_tokens=req.max_tokens,
+            messages=msgs,
+            tools=MCP_TOOLS,
+            tool_choice="auto",
         )
-        response.raise_for_status()
+        total_input  += response.usage.prompt_tokens
+        total_output += response.usage.completion_tokens
 
-        data = response.json()
-        text_response = data.get("message", {}).get("content", "No response")
+        msg = response.choices[0].message
 
-        return {
-            "response": text_response,
-            "session_id": req.session_id,
-            "tools_used": tools_used,
-            "usage": {
-                "input_tokens": 0,
-                "output_tokens": 0,
+        # No tool calls — final answer
+        if not msg.tool_calls:
+            return {
+                "response":   msg.content,
+                "session_id": req.session_id,
+                "tools_used": tools_used,
+                "usage": {
+                    "input_tokens":  total_input,
+                    "output_tokens": total_output,
+                }
             }
-        }
-    except Exception as e:
-        return {
-            "response": f"Error: {str(e)}",
-            "session_id": req.session_id,
-            "tools_used": tools_used,
-            "usage": {"input_tokens": 0, "output_tokens": 0},
-        }
+
+        # Execute tool calls
+        msgs.append(msg)
+        for tc in msg.tool_calls:
+            args = {}
+            try:
+                args = json.loads(tc.function.arguments)
+            except Exception:
+                pass
+
+            result = call_tool(tc.function.name, args)
+            tools_used.append({"tool": tc.function.name, "args": args})
+
+            msgs.append({
+                "role":         "tool",
+                "tool_call_id": tc.id,
+                "content":      result,
+            })
+
+    return {
+        "response":   "Reached maximum tool-call rounds without a final answer.",
+        "session_id": req.session_id,
+        "tools_used": tools_used,
+        "usage":      {"input_tokens": total_input, "output_tokens": total_output},
+    }
 
 
 @app.post("/summarize")
 def summarize(text: str, max_tokens: int = 512):
-    try:
-        response = requests.post(
-            f"{OLLAMA_URL}/api/chat",
-            json={
-                "model": OLLAMA_MODEL,
-                "messages": [{"role": "user", "content": f"Summarize the following:\n\n{text}"}],
-                "stream": False,
-            },
-            timeout=30
-        )
-        response.raise_for_status()
-        data = response.json()
-        summary = data.get("message", {}).get("content", "No summary")
-        return {"summary": summary}
-    except Exception as e:
-        return {"summary": f"Error: {str(e)}"}
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        max_tokens=max_tokens,
+        messages=[{"role": "user", "content": f"Summarize the following:\n\n{text}"}],
+    )
+    return {"summary": response.choices[0].message.content}
