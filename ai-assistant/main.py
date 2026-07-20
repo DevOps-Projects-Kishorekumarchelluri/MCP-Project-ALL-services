@@ -1,7 +1,6 @@
 from fastapi import FastAPI
 from pydantic import BaseModel
 from typing import Optional, List
-import google.generativeai as genai
 import os
 import httpx
 import json
@@ -9,7 +8,8 @@ import requests
 
 app = FastAPI(title="AI Assistant Service", version="2.0.0")
 
-genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
+OLLAMA_URL = os.getenv("OLLAMA_URL", "http://ollama:11434")
+OLLAMA_MODEL = "qwen2.5-coder:7b"
 
 CONTROL_PLANE_URL   = os.getenv("MCP_CONTROL_PLANE_URL",     "http://mcp-control-plane:8008")
 PRODUCT_SERVICE_URL = os.getenv("PRODUCT_SERVICE_URL",       "http://product-service:8005")
@@ -150,29 +150,27 @@ def health():
 
 @app.post("/chat")
 def chat(req: ChatRequest):
-    model = genai.GenerativeModel("gemini-pro")
-
     tools_used = []
 
-    # Convert messages to Gemini format
-    history = []
+    # Build messages for Ollama
+    messages = [{"role": "system", "content": SYSTEM_PROMPT}]
     for m in req.messages:
-        history.append({
-            "role": "user" if m.role == "user" else "model",
-            "parts": [m.content]
-        })
+        messages.append({"role": m.role, "content": m.content})
 
-    # Get response from Gemini
     try:
-        chat_session = model.start_chat(history=history)
-        response = chat_session.send_message(
-            f"{SYSTEM_PROMPT}\n\nUser message: {req.messages[-1].content if req.messages else ''}",
-            generation_config=genai.types.GenerationConfig(
-                max_output_tokens=req.max_tokens,
-            ),
+        response = requests.post(
+            f"{OLLAMA_URL}/api/chat",
+            json={
+                "model": OLLAMA_MODEL,
+                "messages": messages,
+                "stream": False,
+            },
+            timeout=30
         )
+        response.raise_for_status()
 
-        text_response = response.text
+        data = response.json()
+        text_response = data.get("message", {}).get("content", "No response")
 
         return {
             "response": text_response,
@@ -194,12 +192,19 @@ def chat(req: ChatRequest):
 
 @app.post("/summarize")
 def summarize(text: str, max_tokens: int = 512):
-    model = genai.GenerativeModel("gemini-pro")
     try:
-        response = model.generate_content(
-            f"Summarize the following:\n\n{text}",
-            generation_config=genai.types.GenerationConfig(max_output_tokens=max_tokens),
+        response = requests.post(
+            f"{OLLAMA_URL}/api/chat",
+            json={
+                "model": OLLAMA_MODEL,
+                "messages": [{"role": "user", "content": f"Summarize the following:\n\n{text}"}],
+                "stream": False,
+            },
+            timeout=30
         )
-        return {"summary": response.text}
+        response.raise_for_status()
+        data = response.json()
+        summary = data.get("message", {}).get("content", "No summary")
+        return {"summary": summary}
     except Exception as e:
         return {"summary": f"Error: {str(e)}"}
