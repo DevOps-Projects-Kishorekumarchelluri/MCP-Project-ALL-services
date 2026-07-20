@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from pydantic import BaseModel
 from typing import Optional, List
-from openai import OpenAI
+from anthropic import Anthropic
 import os
 import httpx
 import json
@@ -9,7 +9,7 @@ import requests
 
 app = FastAPI(title="AI Assistant Service", version="2.0.0")
 
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+client = Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
 
 CONTROL_PLANE_URL   = os.getenv("MCP_CONTROL_PLANE_URL",     "http://mcp-control-plane:8008")
 PRODUCT_SERVICE_URL = os.getenv("PRODUCT_SERVICE_URL",       "http://product-service:8005")
@@ -162,8 +162,7 @@ def health():
 
 @app.post("/chat")
 def chat(req: ChatRequest):
-    msgs = [{"role": "system", "content": SYSTEM_PROMPT}]
-    msgs += [{"role": m.role, "content": m.content} for m in req.messages]
+    msgs = [{"role": m.role, "content": m.content} for m in req.messages]
 
     tools_used = []
     total_input = 0
@@ -171,22 +170,30 @@ def chat(req: ChatRequest):
 
     # Tool-calling loop (max 5 rounds)
     for _ in range(5):
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
+        response = client.messages.create(
+            model="claude-3-5-sonnet-20241022",
             max_tokens=req.max_tokens,
-            messages=msgs,
+            system=SYSTEM_PROMPT,
             tools=MCP_TOOLS,
-            tool_choice="auto",
+            messages=msgs,
         )
-        total_input  += response.usage.prompt_tokens
-        total_output += response.usage.completion_tokens
+        total_input  += response.usage.input_tokens
+        total_output += response.usage.output_tokens
 
-        msg = response.choices[0].message
+        # Extract text response
+        text_response = ""
+        tool_calls = []
+
+        for block in response.content:
+            if block.type == "text":
+                text_response = block.text
+            elif block.type == "tool_use":
+                tool_calls.append(block)
 
         # No tool calls — final answer
-        if not msg.tool_calls:
+        if not tool_calls or response.stop_reason == "end_turn":
             return {
-                "response":   msg.content,
+                "response":   text_response,
                 "session_id": req.session_id,
                 "tools_used": tools_used,
                 "usage": {
@@ -195,22 +202,29 @@ def chat(req: ChatRequest):
                 }
             }
 
+        # Add assistant response to conversation
+        msgs.append({"role": "assistant", "content": response.content})
+
         # Execute tool calls
-        msgs.append(msg)
-        for tc in msg.tool_calls:
+        for tc in tool_calls:
             args = {}
             try:
-                args = json.loads(tc.function.arguments)
+                args = json.loads(tc.input)
             except Exception:
                 pass
 
-            result = call_tool(tc.function.name, args)
-            tools_used.append({"tool": tc.function.name, "args": args})
+            result = call_tool(tc.name, args)
+            tools_used.append({"tool": tc.name, "args": args})
 
             msgs.append({
-                "role":         "tool",
-                "tool_call_id": tc.id,
-                "content":      result,
+                "role": "user",
+                "content": [
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": tc.id,
+                        "content": result,
+                    }
+                ],
             })
 
     return {
@@ -223,9 +237,14 @@ def chat(req: ChatRequest):
 
 @app.post("/summarize")
 def summarize(text: str, max_tokens: int = 512):
-    response = client.chat.completions.create(
-        model="gpt-4o-mini",
+    response = client.messages.create(
+        model="claude-3-5-sonnet-20241022",
         max_tokens=max_tokens,
         messages=[{"role": "user", "content": f"Summarize the following:\n\n{text}"}],
     )
-    return {"summary": response.choices[0].message.content}
+    summary = ""
+    for block in response.content:
+        if block.type == "text":
+            summary = block.text
+            break
+    return {"summary": summary}
